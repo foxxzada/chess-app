@@ -2,25 +2,17 @@
 
 :root {
   --background: #202020;
-  --foreground: #171717;
+  --foreground: #ededed;
   --light-square-color: #e7dfd4;
   --dark-square-color: #b38b6b;
-  --square-size: 100px;
+  --square-size: min(10.5vw, calc((100dvh - 10.5rem) / 8), 88px);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media all and (max-width: 450px) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --square-size: 50px;
-  }
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", monospace;
 }
 
 html,
@@ -28,12 +20,21 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  display: grid;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
+  min-height: 100dvh;
   margin: 0;
-  padding: 0;
+  padding: 1rem;
+  overflow-x: hidden;
+}
+
+body {
+  display: grid;
+  place-items: center;
+}
+
+main {
+  width: 100%;
+  display: grid;
+  place-items: center;
 }
 
 .board--light--square {
