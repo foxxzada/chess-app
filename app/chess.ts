@@ -246,7 +246,7 @@ function hasLegalMove(state: GameState, color: Color) {
   return false;
 }
 
-function finishTurn(state: GameState, movingColor: Color): GameState {
+function finishTurn(state: GameState, movingColor: Color, notation: string): GameState {
   const nextTurn = opponent(movingColor);
   const withIncrement = {
     ...state,
@@ -263,22 +263,28 @@ function finishTurn(state: GameState, movingColor: Color): GameState {
   };
   const legalMoveExists = hasLegalMove(nextState, nextTurn);
 
+  let result = nextState;
   if (!legalMoveExists) {
     if (isInCheck(nextState.board, nextTurn)) {
-      return { ...nextState, status: "checkmate", winner: movingColor };
+      result = { ...nextState, status: "checkmate", winner: movingColor };
+    } else {
+      result = { ...nextState, status: "stalemate", winner: null };
     }
-    return { ...nextState, status: "stalemate", winner: null };
+  } else if (isInsufficientMaterial(nextState.board)) {
+    result = { ...nextState, status: "draw", drawReason: "insufficientMaterial" };
+  } else if (nextState.halfmoveClock >= 100) {
+    result = { ...nextState, status: "draw", drawReason: "fiftyMove" };
+  } else if (nextState.positionHistory[positionKey] >= 3) {
+    result = { ...nextState, status: "draw", drawReason: "threefold" };
   }
-  if (isInsufficientMaterial(nextState.board)) {
-    return { ...nextState, status: "draw", drawReason: "insufficientMaterial" };
-  }
-  if (nextState.halfmoveClock >= 100) {
-    return { ...nextState, status: "draw", drawReason: "fiftyMove" };
-  }
-  if (nextState.positionHistory[positionKey] >= 3) {
-    return { ...nextState, status: "draw", drawReason: "threefold" };
-  }
-  return nextState;
+
+  const suffix = result.status === "checkmate" ? "#" : isInCheck(result.board, nextTurn) ? "+" : "";
+  return {
+    ...result,
+    moveHistory: [...state.moveHistory, `${notation}${suffix}`],
+    pendingNotation: null,
+    drawOfferFrom: null,
+  };
 }
 
 function isInsufficientMaterial(board: BoardPosition) {
@@ -296,14 +302,53 @@ function isInsufficientMaterial(board: BoardPosition) {
     && minorPieces.every(({ squareColor }) => squareColor === minorPieces[0].squareColor);
 }
 
+function squareName({ rank, file }: Coordinates) {
+  return `${"abcdefgh"[file]}${8 - rank}`;
+}
+
+function sanForMove(state: GameState, from: Coordinates, to: Coordinates) {
+  const piece = state.board[from.rank][from.file];
+  const target = state.board[to.rank][to.file];
+  const isPawn = piece[1] === "p";
+  const isCapture = Boolean(target) || (isPawn && state.enPassant?.rank === to.rank && state.enPassant.file === to.file);
+
+  if (piece[1] === "k" && Math.abs(to.file - from.file) === 2) {
+    return to.file === 6 ? "O-O" : "O-O-O";
+  }
+
+  let disambiguation = "";
+  if (!isPawn) {
+    const competitors: Coordinates[] = [];
+    for (let rank = 0; rank < 8; rank += 1) {
+      for (let file = 0; file < 8; file += 1) {
+        if (rank === from.rank && file === from.file) continue;
+        if (state.board[rank][file] === piece && isLegalMove(state, { rank, file }, to)) {
+          competitors.push({ rank, file });
+        }
+      }
+    }
+    if (competitors.length) {
+      const sameFile = competitors.some((square) => square.file === from.file);
+      const sameRank = competitors.some((square) => square.rank === from.rank);
+      disambiguation = !sameFile ? "abcdefgh"[from.file]
+        : !sameRank ? String(8 - from.rank)
+          : squareName(from);
+    }
+  }
+
+  const prefix = isPawn ? (isCapture ? "abcdefgh"[from.file] : "") : piece[1].toUpperCase();
+  return `${prefix}${disambiguation}${isCapture ? "x" : ""}${squareName(to)}`;
+}
+
 export function makeMove(state: GameState, from: Coordinates, to: Coordinates): GameState {
   if (!isLegalMove(state, from, to)) return state;
+  const notation = sanForMove(state, from, to);
   const movedState = applyMove(state, from, to);
   const movedPiece = movedState.board[to.rank][to.file];
   if (movedPiece[1] === "p" && (to.rank === 0 || to.rank === 7)) {
-    return { ...movedState, promotion: to };
+    return { ...movedState, promotion: to, pendingNotation: notation };
   }
-  return finishTurn(movedState, state.turn);
+  return finishTurn(movedState, state.turn, notation);
 }
 
 export function promotePawn(state: GameState, promotion: PromotionPiece): GameState {
@@ -315,7 +360,8 @@ export function promotePawn(state: GameState, promotion: PromotionPiece): GameSt
 
   const board = state.board.map((currentRank) => [...currentRank]);
   board[rank][file] = `${color}${promotion}`;
-  return finishTurn({ ...state, board, promotion: null }, color);
+  const notation = `${state.pendingNotation ?? squareName({ rank, file })}=${promotion.toUpperCase()}`;
+  return finishTurn({ ...state, board, promotion: null }, color, notation);
 }
 
 export function tickClock(state: GameState): GameState {

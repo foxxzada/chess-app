@@ -103,3 +103,73 @@ describe("chess rules", () => {
     expect(reducer(state, { type: "ENGINE_MOVE", fromRank: 0, fromFile: 2, toRank: 3, toFile: 5, promotion: "q" })).toBe(state);
   });
 });
+
+describe("move notation and game controls", () => {
+  it("records standard notation for both sides and clears it for a new game", () => {
+    let state = startGame(timeControls[6]);
+    state = move(state, "e2", "e4");
+    state = move(state, "e7", "e5");
+    state = move(state, "g1", "f3");
+
+    expect(state.moveHistory).toEqual(["e4", "e5", "Nf3"]);
+    expect(startGame(timeControls[6]).moveHistory).toEqual([]);
+  });
+
+  it("marks checkmate in the recorded notation", () => {
+    let state = startGame(timeControls[6]);
+    for (const [from, to] of [["f2", "f3"], ["e7", "e5"], ["g2", "g4"], ["d8", "h4"]]) {
+      state = move(state, from, to);
+    }
+
+    expect(state.moveHistory).toEqual(["f3", "e5", "g4", "Qh4#"]);
+  });
+
+  it("records a promotion as one move after the piece is chosen", () => {
+    const pending = move(position({ e1: "wk", e8: "bk", a7: "wp" }), "a7", "a8");
+    expect(pending.moveHistory).toEqual([]);
+
+    const promoted = promotePawn(pending, "q");
+    expect(promoted.moveHistory).toEqual(["a8=Q+"]);
+  });
+
+  it("records resignation as a loss for the resigning player", () => {
+    const state = startGame(timeControls[6]);
+    const resigned = reducer(state, { type: "RESIGN", color: "w" });
+
+    expect(resigned.status).toBe("resigned");
+    expect(resigned.winner).toBe("b");
+    expect(reducer(resigned, { type: "RESIGN", color: "w" })).toBe(resigned);
+  });
+
+  it("allows the human to resign while Stockfish is to move", () => {
+    const state = move(startGame(timeControls[6], "stockfish"), "e2", "e4");
+    expect(state.turn).toBe("b");
+
+    const resigned = reducer(state, { type: "RESIGN", color: "w" });
+    expect(resigned.status).toBe("resigned");
+    expect(resigned.winner).toBe("b");
+  });
+
+  it("allows the opposing player to accept a draw offer", () => {
+    const state = startGame(timeControls[6], "human");
+    const offered = reducer(state, { type: "OFFER_DRAW", color: "w" });
+    expect(offered.drawOfferFrom).toBe("w");
+
+    const accepted = reducer(offered, { type: "ACCEPT_DRAW" });
+    expect(accepted.status).toBe("draw");
+    expect(accepted.drawReason).toBe("agreement");
+    expect(accepted.winner).toBeNull();
+    expect(accepted.drawOfferFrom).toBeNull();
+  });
+
+  it("clears a declined or withdrawn draw offer", () => {
+    const state = reducer(startGame(timeControls[6], "human"), { type: "OFFER_DRAW", color: "w" });
+    expect(reducer(state, { type: "DECLINE_DRAW" }).drawOfferFrom).toBeNull();
+    expect(reducer(state, { type: "CANCEL_DRAW_OFFER" }).drawOfferFrom).toBeNull();
+  });
+
+  it("does not offer a negotiated draw against Stockfish", () => {
+    const state = startGame(timeControls[6], "stockfish");
+    expect(reducer(state, { type: "OFFER_DRAW", color: "w" })).toBe(state);
+  });
+});

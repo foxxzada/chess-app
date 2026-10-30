@@ -2,7 +2,7 @@ export type Piece = "" | `${"w" | "b"}${"r" | "n" | "b" | "q" | "k" | "p"}`;
 export type BoardPosition = Piece[][];
 export type Color = "w" | "b";
 export type PromotionPiece = "q" | "r" | "b" | "n";
-export type DrawReason = "threefold" | "fiftyMove" | "insufficientMaterial";
+export type DrawReason = "threefold" | "fiftyMove" | "insufficientMaterial" | "agreement";
 export type Opponent = "human" | "stockfish";
 export type StockfishDifficulty = "easy" | "medium" | "strong";
 
@@ -54,7 +54,7 @@ export interface GameState {
   castling: CastlingRights;
   enPassant: Coordinates | null;
   promotion: Coordinates | null;
-  status: "setup" | "playing" | "checkmate" | "stalemate" | "draw" | "timeout";
+  status: "setup" | "playing" | "checkmate" | "stalemate" | "draw" | "timeout" | "resigned";
   winner: Color | null;
   drawReason: DrawReason | null;
   timeControl: TimeControl;
@@ -63,6 +63,9 @@ export interface GameState {
   clocks: Record<Color, number>;
   halfmoveClock: number;
   positionHistory: Record<string, number>;
+  moveHistory: string[];
+  pendingNotation: string | null;
+  drawOfferFrom: Color | null;
 }
 
 export function createInitialGameState(
@@ -88,6 +91,9 @@ export function createInitialGameState(
     clocks: { w: timeControl.initialTimeSeconds, b: timeControl.initialTimeSeconds },
     halfmoveClock: 0,
     positionHistory: {},
+    moveHistory: [],
+    pendingNotation: null,
+    drawOfferFrom: null,
   };
 }
 
