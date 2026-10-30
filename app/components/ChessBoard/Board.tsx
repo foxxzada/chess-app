@@ -34,6 +34,7 @@ export default function ChessBoard() {
   const { appState, dispatch } = useAppContext();
   const [dragging, setDragging] = useState<Coordinates | null>(null);
   const [selected, setSelected] = useState<Coordinates | null>(null);
+  const [confirmResignation, setConfirmResignation] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [engineError, setEngineError] = useState(false);
   const workerRef = useRef<Worker | null>(null);
@@ -171,8 +172,12 @@ export default function ChessBoard() {
       ? "Empate por afogamento."
       : appState.status === "timeout"
         ? `Tempo esgotado — ${appState.winner === "w" ? "brancas" : "pretas"} venceram.`
+        : appState.status === "resigned"
+          ? `${appState.winner === "w" ? "Brancas" : "Pretas"} venceram por desistência.`
         : appState.status === "draw"
-          ? appState.drawReason === "threefold"
+          ? appState.drawReason === "agreement"
+            ? "Empate por acordo."
+            : appState.drawReason === "threefold"
             ? "Empate por repetição tripla."
             : appState.drawReason === "fiftyMove"
               ? "Empate pela regra dos 50 lances."
@@ -182,9 +187,11 @@ export default function ChessBoard() {
         : `${appState.turn === "w" ? "Vez das brancas" : "Vez das pretas"}${checked ? " — xeque!" : ""}`;
 
   const isFinished = appState.status !== "playing";
+  const actingColor = appState.opponent === "stockfish" ? "w" : appState.turn;
 
   return (
-    <section className="flex max-h-[calc(100dvh-2rem)] flex-col items-center gap-2">
+    <section className="flex w-full flex-col items-center gap-3 xl:flex-row xl:items-start xl:justify-center xl:gap-5">
+      <div className="flex flex-col items-center gap-2">
       <div className="flex w-[calc(8.25*var(--square-size))] justify-between gap-2 text-[var(--light-square-color)]">
         {(["b", "w"] as const).map((color) => (
           <div key={color} className={`rounded-md px-2 py-1 text-center shadow-sm ${appState.status === "playing" && appState.turn === color ? "bg-amber-400 text-[#202020]" : "bg-[#2c2c2c]"}`}>
@@ -201,6 +208,62 @@ export default function ChessBoard() {
           </button>
         )}
       </div>
+      {!isFinished && (
+        <div className="flex w-[calc(8.25*var(--square-size))] flex-wrap items-center justify-center gap-2">
+          {confirmResignation ? (
+            <>
+              <span className="text-xs text-stone-300">Desistir desta partida?</span>
+              <button
+                type="button"
+                className="rounded bg-red-700 px-3 py-2 text-xs font-bold text-white hover:bg-red-600"
+                onClick={() => {
+                  dispatch({ type: "RESIGN", color: actingColor });
+                  setConfirmResignation(false);
+                }}
+              >
+                Confirmar desistência
+              </button>
+              <button type="button" className="rounded bg-stone-700 px-3 py-2 text-xs font-semibold hover:bg-stone-600" onClick={() => setConfirmResignation(false)}>
+                Cancelar
+              </button>
+            </>
+          ) : (
+            <button type="button" className="rounded bg-stone-700 px-3 py-2 text-xs font-semibold hover:bg-stone-600" onClick={() => setConfirmResignation(true)}>
+              Desistir
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={appState.opponent === "stockfish" || Boolean(appState.drawOfferFrom)}
+            title={appState.opponent === "stockfish" ? "Ofertas manuais só estão disponíveis em partidas entre duas pessoas." : undefined}
+            className="rounded bg-stone-700 px-3 py-2 text-xs font-semibold hover:bg-stone-600 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => dispatch({ type: "OFFER_DRAW", color: actingColor })}
+          >
+            Oferecer empate
+          </button>
+        </div>
+      )}
+      {appState.opponent === "stockfish" && appState.status === "playing" && (
+        <p className="w-[calc(8.25*var(--square-size))] text-center text-xs text-stone-400">
+          Contra o Stockfish, a partida termina em empate pelas regras automáticas; oferta manual não está disponível.
+        </p>
+      )}
+      {appState.drawOfferFrom && appState.status === "playing" && (
+        <div className="w-[calc(8.25*var(--square-size))] rounded-md bg-[#2c2c2c] p-2 text-center text-sm text-[var(--light-square-color)]" aria-live="polite">
+          <p>{appState.drawOfferFrom === "w" ? "Brancas" : "Pretas"} ofereceram empate. A outra pessoa pode responder:</p>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <button type="button" className="rounded bg-amber-400 px-3 py-1.5 text-xs font-bold text-[#202020] hover:bg-amber-300" onClick={() => dispatch({ type: "ACCEPT_DRAW" })}>
+              Aceitar empate
+            </button>
+            <button type="button" className="rounded bg-stone-700 px-3 py-1.5 text-xs font-semibold hover:bg-stone-600" onClick={() => dispatch({ type: "DECLINE_DRAW" })}>
+              Recusar
+            </button>
+            <button type="button" className="rounded bg-stone-700 px-3 py-1.5 text-xs font-semibold hover:bg-stone-600" onClick={() => dispatch({ type: "CANCEL_DRAW_OFFER" })}>
+              Cancelar oferta
+            </button>
+          </div>
+        </div>
+      )}
       <div className="relative">
         <div className="grid grid-cols-[calc(.25*var(--square-size))_calc(8*var(--square-size))] grid-rows-[calc(8*var(--square-size))_calc(.25*var(--square-size))]">
           <Ranks />
@@ -249,6 +312,25 @@ export default function ChessBoard() {
           </div>
         )}
       </div>
+      </div>
+      <aside className="w-[calc(8.25*var(--square-size))] rounded-lg bg-[#2c2c2c] p-3 text-[var(--light-square-color)] shadow-md xl:w-64">
+        <h2 className="text-sm font-bold">Anotação dos lances</h2>
+        <div role="region" aria-label="Lances da partida" className="mt-2 max-h-40 overflow-y-auto rounded bg-[#202020] p-2 text-sm xl:max-h-[calc(100dvh-12rem)]">
+          {appState.moveHistory.length === 0 ? (
+            <p className="text-xs text-stone-400">Os lances aparecerão aqui.</p>
+          ) : (
+            <ol className="space-y-1">
+              {Array.from({ length: Math.ceil(appState.moveHistory.length / 2) }, (_, index) => (
+                <li key={index} className="grid grid-cols-[2rem_1fr_1fr] gap-2 font-mono">
+                  <span className="text-right text-stone-400">{index + 1}.</span>
+                  <span>{appState.moveHistory[index * 2]}</span>
+                  <span>{appState.moveHistory[index * 2 + 1] ?? ""}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </aside>
     </section>
   );
 }
